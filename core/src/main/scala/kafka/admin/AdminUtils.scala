@@ -417,6 +417,40 @@ object AdminUtils extends Logging with AdminUtilities {
     AdminUtils.createOrUpdateTopicPartitionAssignmentPathInZK(zkUtils, topic, replicaAssignment, topicConfig)
   }
 
+  def updateTopic(zkUtils: ZkUtils,
+                  topic: String,
+                  partitions: Option[Int],
+                  replicationFactor: Option[Int],
+                  topicConfig: Properties = new Properties,
+                  rackAwareMode: RackAwareMode = RackAwareMode.Enforced) {
+    val existingPartitionsReplicaList = zkUtils.getReplicaAssignmentForTopics(List(topic))
+    if (existingPartitionsReplicaList.isEmpty)
+      throw new AdminOperationException("The topic %s does not exist".format(topic))
+
+    val existingReplicaListForPartitionZero = existingPartitionsReplicaList.find(p => p._1.partition == 0) match {
+      case None => throw new AdminOperationException("the topic does not have partition with id 0, it should never happen")
+      case Some(headPartitionReplica) => headPartitionReplica._2
+    }
+
+    val targetPartitions = partitions.getOrElse {
+      existingPartitionsReplicaList.size
+    }
+    val targetReplicationFactor = replicationFactor.getOrElse {
+      existingReplicaListForPartitionZero.size
+    }
+
+    if (targetPartitions - existingPartitionsReplicaList.size < 0)
+      throw new AdminOperationException("The number of partitions for a topic can only be increased")
+
+    val brokerMetadatas = getBrokerMetadatas(zkUtils, rackAwareMode)
+
+    val startIndex = math.max(0, brokerMetadatas.indexWhere(_.id >= existingReplicaListForPartitionZero.head))
+    val replicaAssignment = AdminUtils.assignReplicasToBrokers(brokerMetadatas, targetPartitions,
+      targetReplicationFactor, startIndex, targetPartitions)
+
+    AdminUtils.createOrUpdateTopicPartitionAssignmentPathInZK(zkUtils, topic, replicaAssignment, topicConfig, true)
+  }
+
   def validateCreateOrUpdateTopic(zkUtils: ZkUtils,
                                   topic: String,
                                   partitionReplicaAssignment: Map[Int, Seq[Int]],

@@ -134,16 +134,25 @@ object TopicCommand extends Logging {
         println("Updated config for topic \"%s\".".format(topic))
       }
 
-      if(opts.options.has(opts.partitionsOpt)) {
+      //TODO: handle replica assignment string
+      //val replicaAssignmentStr = opts.options.valueOf(opts.replicaAssignmentOpt)
+      //AdminUtils.addPartitions(zkUtils, topic, nPartitions, replicaAssignmentStr)
+
+      if (opts.options.has(opts.replicationFactorOpt)) {
         if (topic == Topic.GroupMetadataTopicName) {
-          throw new IllegalArgumentException("The number of partitions for the offsets topic cannot be changed.")
+          throw new IllegalArgumentException("The offsets topic cannot be changed.")
         }
+        val partitions = Option(opts.options.valueOf(opts.partitionsOpt)).map(_.intValue)
+        val replicas = Option(opts.options.valueOf(opts.replicationFactorOpt)).map(_.intValue)
+        val rackAwareMode = if (opts.options.has(opts.disableRackAware)) RackAwareMode.Disabled
+                            else RackAwareMode.Enforced
+
         println("WARNING: If partitions are increased for a topic that has a key, the partition " +
           "logic or ordering of the messages will be affected")
-        val nPartitions = opts.options.valueOf(opts.partitionsOpt).intValue
-        val replicaAssignmentStr = opts.options.valueOf(opts.replicaAssignmentOpt)
-        AdminUtils.addPartitions(zkUtils, topic, nPartitions, replicaAssignmentStr)
-        println("Adding partitions succeeded!")
+
+        AdminUtils.updateTopic(zkUtils, topic, partitions, replicas, configs, rackAwareMode)
+
+        println("Updated topic \"%s\".".format(topic))
       }
     }
   }
@@ -341,7 +350,7 @@ object TopicCommand extends Logging {
       CommandLineUtils.checkInvalidArgs(parser, options, configOpt, allTopicLevelOpts -- Set(alterOpt, createOpt))
       CommandLineUtils.checkInvalidArgs(parser, options, deleteConfigOpt, allTopicLevelOpts -- Set(alterOpt))
       CommandLineUtils.checkInvalidArgs(parser, options, partitionsOpt, allTopicLevelOpts -- Set(alterOpt, createOpt))
-      CommandLineUtils.checkInvalidArgs(parser, options, replicationFactorOpt, allTopicLevelOpts -- Set(createOpt))
+      CommandLineUtils.checkInvalidArgs(parser, options, replicationFactorOpt, allTopicLevelOpts -- Set(createOpt,alterOpt))
       CommandLineUtils.checkInvalidArgs(parser, options, replicaAssignmentOpt, allTopicLevelOpts -- Set(createOpt,alterOpt))
       if(options.has(createOpt))
           CommandLineUtils.checkInvalidArgs(parser, options, replicaAssignmentOpt, Set(partitionsOpt, replicationFactorOpt))
